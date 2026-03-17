@@ -1,0 +1,53 @@
+import streamlit as st
+import torch
+import torch.nn as nn
+from torchvision import transforms, models
+from PIL import Image
+import os
+
+st.set_page_config(page_title="Pistacho AI", layout="centered")
+
+@st.cache_resource
+def load_model():
+    model = models.resnet18(weights=None)
+    model.fc = nn.Linear(model.fc.in_features, 2)
+    model_path = "modelo_pistachos_final.pth"
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location="cpu"))
+        model.eval()
+        return model
+    return None
+
+model = load_model()
+
+st.title("🔍 Scanner de Pistachos")
+st.write("Enfoque el pistacho y capture la imagen")
+
+foto = st.camera_input("Capturar")
+
+if foto:
+    img = Image.open(foto).convert('RGB')
+    prep = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+    tensor = prep(img).unsqueeze(0)
+    
+    if model:
+        with torch.no_grad():
+            output = model(tensor)
+            prob = torch.nn.functional.softmax(output[0], dim=0)
+            conf, idx = torch.max(prob, 0)
+        
+        clase = ["CERRADO", "ABIERTO"][idx.item()]
+        color = "#28a745" if clase == "ABIERTO" else "#dc3545"
+        
+        st.markdown(f"""
+            <div style="background-color:{color}; padding:20px; border-radius:10px; text-align:center;">
+                <h1 style="color:white; margin:0; font-size:40px;">{clase}</h1>
+                <p style="color:white; margin:0;">Certeza: {conf.item()*100:.1f}%</p>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.error("Modelo no encontrado. Verifique que subió el archivo .pth")
